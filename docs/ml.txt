@@ -1,0 +1,474 @@
+You are a Senior Full Stack AI Engineer with 10+ years of experience building 
+production-grade SaaS systems with AI/ML integration.
+
+Build a COMPLETE, END-TO-END "Voice-Based Billing System for Restaurants" with 
+REAL data flow at every layer. ZERO hardcoded data, ZERO mock responses, 
+ZERO dummy fallbacks, ZERO placeholder text anywhere in the codebase.
+
+Every single data point — menu items, orders, transcripts, billing — must flow 
+from REAL sources: MongoDB database, HuggingFace AI models, Web Speech API.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏗️ COMPLETE TECH STACK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Frontend:  React.js + Tailwind CSS + Lucide React
+Backend:   Node.js + Express.js
+Database:  MongoDB + Mongoose
+AI Layer:  HuggingFace Inference API (4 real models)
+Bridge:    REST API (Frontend ↔ Backend ↔ HuggingFace ↔ MongoDB)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 HUGGINGFACE MODELS (REAL — NO SUBSTITUTES)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Model 1 — Speech Enhancement (Noise Removal):
+  ID:   JorisCos/DCCRNet_Libri1Mix_enhsingle_16k
+  Task: Clean kitchen background noise from audio
+  When: BEFORE sending audio to Whisper
+  How:  POST audio blob → backend → HF Inference API → 
+        returns cleaned audio buffer
+
+Model 2 — Speech to Text (Transcription):
+  ID:   openai/whisper-medium
+  Task: Convert cleaned voice audio → raw text transcript
+  When: After noise removal
+  How:  POST cleaned audio buffer → HF automaticSpeechRecognition
+        → returns { text: "do paneer butter masala aur teen naan" }
+
+Model 3 — Translation (Multilingual → English):
+  ID:   Helsinki-NLP/opus-mt-mul-en
+  Task: Translate Hindi/Gujarati/Tamil order text → English
+  When: After transcription, BEFORE NER
+  How:  POST { inputs: transcript_text } → HF translation pipeline
+        → returns [{ translation_text: "two paneer butter masala 
+           and three naan" }]
+  Logic: Always run translation. If input is already English,
+         model returns same text — no language detection needed.
+
+Model 4 — Named Entity Recognition (Item Extraction):
+  ID:   dslim/bert-base-NER
+  Task: Extract food item names and quantities from translated text
+  When: After translation
+  How:  POST { inputs: english_text } → HF tokenClassification
+        → returns array of labeled tokens
+  Post-processing: Group consecutive B-ORG/I-ORG/B-PER/I-PER tokens
+        into full entity strings. Map entities against MongoDB menu
+        collection using case-insensitive regex fuzzy match.
+        Extract quantity by scanning tokens BEFORE each entity for
+        digits or words: one=1 two=2 three=3 four=4 five=5 six=6
+        seven=7 eight=8 nine=9. Default qty=1 if none found.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 COMPLETE REAL DATA FLOW (Step by Step)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — Frontend mic capture:
+  - User taps mic button
+  - Browser MediaRecorder API captures audio as Blob (audio/webm)
+  - On stop: send audio Blob as FormData to backend
+  - Endpoint: POST /api/ai/process-voice
+
+STEP 2 — Backend noise cleaning:
+  - Receive audio file via multer (memoryStorage, no disk writes)
+  - Convert audio buffer to correct format
+  - POST to HF Inference API:
+      model: JorisCos/DCCRNet_Libri1Mix_enhsingle_16k
+      data: audioBuffer
+  - Receive cleaned audio buffer
+
+STEP 3 — Backend transcription:
+  - POST cleaned audio buffer to HF Inference API:
+      model: openai/whisper-medium
+      data: cleanedAudioBuffer
+  - Receive: { text: "raw transcript in any language" }
+
+STEP 4 — Backend translation:
+  - POST to HF Inference API:
+      model: Helsinki-NLP/opus-mt-mul-en
+      inputs: transcript.text
+  - Receive: [{ translation_text: "english order text" }]
+
+STEP 5 — Backend NER extraction:
+  - POST to HF Inference API:
+      model: dslim/bert-base-NER
+      inputs: translation_text
+  - Receive: array of token classification results
+  - Post-process: extract entity strings + quantities
+  - Fuzzy match each entity against MongoDB Menu collection:
+      db.menu.find({ name: { $regex: entityString, $options: 'i' },
+                     available: true })
+  - Build resolved items array: 
+      [{ menuItemId, name, quantity, unitPrice, totalPrice }]
+
+STEP 6 — Backend billing:
+  - subtotal = sum(unitPrice * quantity)
+  - taxAmount = subtotal * GST_RATE (from .env)
+  - grandTotal = subtotal + taxAmount
+  - All values rounded to 2 decimal places
+
+STEP 7 — Backend response to frontend:
+  - Return single JSON:
+    {
+      transcript: "original text",
+      translatedText: "english text",
+      extractedEntities: [...],
+      resolvedItems: [...],
+      notFound: [...],
+      billing: { subtotal, taxAmount, gstRate, grandTotal }
+    }
+
+STEP 8 — Frontend renders real data:
+  - Display live transcript from response
+  - Display translated text if different
+  - Render order items from resolvedItems (NO hardcoded menu)
+  - Show billing totals from response
+  - User can manually adjust qty +/- (updates totals via 
+    recalculation on frontend using unitPrice from response)
+
+STEP 9 — Order submission:
+  - User clicks "Generate Bill"
+  - Frontend POST /api/orders with:
+    { resolvedItems, tableNumber, customerName, 
+      paymentMethod, transcript, grandTotal,
+      subtotal, taxAmount, gstRate }
+  - Backend saves to MongoDB Orders collection
+  - Returns saved order with _id and orderNumber
+
+STEP 10 — Invoice display:
+  - Frontend renders invoice modal from saved order data
+  - All values from MongoDB response — nothing computed on frontend
+  - Print button calls window.print()
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📁 FOLDER STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+backend/
+├── server.js
+├── app.js
+├── package.json
+├── .env.example
+├── config/
+│   └── db.js
+├── models/
+│   ├── Menu.js
+│   └── Order.js
+├── controllers/
+│   ├── menuController.js
+│   ├── orderController.js
+│   └── aiController.js
+├── services/
+│   ├── huggingfaceService.js   ← ALL 4 HF model calls here
+│   ├── nerParserService.js     ← Token grouping + qty extraction
+│   ├── menuMatchService.js     ← MongoDB fuzzy match
+│   ├── billingService.js       ← Subtotal/GST/Total calc
+│   └── orderService.js         ← Save/fetch orders
+├── routes/
+│   ├── menuRoutes.js
+│   ├── orderRoutes.js
+│   └── aiRoutes.js
+├── middleware/
+│   ├── errorHandler.js
+│   ├── validateOrder.js
+│   └── upload.js               ← multer memoryStorage config
+└── seed/
+    └── seedMenu.js             ← Seeds REAL menu to MongoDB
+
+frontend/src/
+├── App.jsx
+├── main.jsx
+├── services/
+│   └── api.js                  ← All fetch calls to backend
+├── hooks/
+│   ├── useVoiceRecorder.js     ← MediaRecorder logic
+│   └── useOrderState.js        ← Order state management
+├── components/
+│   ├── TopBar.jsx
+│   ├── VoiceCapture.jsx        ← Mic button + recording state
+│   ├── TranscriptPanel.jsx     ← Live transcript display
+│   ├── OrderSummary.jsx        ← Real items from API
+│   ├── BillingPanel.jsx        ← Real totals from API
+│   ├── InvoiceModal.jsx        ← Real order from MongoDB
+│   └── ToastNotification.jsx
+└── index.css
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗄️ MONGODB SCHEMAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Menu Schema:
+  name:           String, required, trim, unique
+  normalizedName: String (auto lowercase pre-save)
+  price:          Number, required, min:0
+  category:       String, enum:["Starters","Main Course",
+                  "Rice","Bread","Beverages","Desserts"]
+  available:      Boolean, default: true
+  description:    String, optional
+  timestamps:     true
+  Index:          { normalizedName: 1 }, { category: 1 }
+
+Order Schema:
+  orderNumber:    String, unique, auto "ORD-"+Date.now()
+  tableNumber:    Number, required
+  customerName:   String, default: "Guest"
+  items: [{
+    menuItemId:   ObjectId ref Menu
+    name:         String
+    quantity:     Number
+    unitPrice:    Number
+    totalPrice:   Number
+  }]
+  subtotal:       Number
+  gstRate:        Number
+  taxAmount:      Number
+  grandTotal:     Number
+  paymentMethod:  String, enum:["Cash","Card","UPI"]
+  status:         String, enum:["pending","paid","cancelled"]
+  transcript:     String
+  translatedText: String
+  timestamps:     true
+  Index:          { createdAt: -1 }, { status: 1 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ services/huggingfaceService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use: @huggingface/inference InferenceClient
+Init: new InferenceClient(process.env.HF_TOKEN)
+
+Export 4 functions:
+
+async enhanceAudio(audioBuffer):
+  - client.audioToAudio({
+      model: "JorisCos/DCCRNet_Libri1Mix_enhsingle_16k",
+      data: audioBuffer
+    })
+  - Return enhanced audio buffer
+  - On HF error: log warning, return ORIGINAL audioBuffer 
+    (degraded mode — Whisper still works, just noisier)
+
+async transcribeAudio(audioBuffer):
+  - client.automaticSpeechRecognition({
+      model: "openai/whisper-medium",
+      data: audioBuffer
+    })
+  - Return result.text (throw if empty)
+
+async translateToEnglish(text):
+  - client.translation({
+      model: "Helsinki-NLP/opus-mt-mul-en",
+      inputs: text
+    })
+  - Return result[0].translation_text or result.translation_text
+
+async extractEntities(text):
+  - client.tokenClassification({
+      model: "dslim/bert-base-NER",
+      inputs: text
+    })
+  - Return raw token array
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ services/nerParserService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export parseEntitiesWithQty(tokens, originalText):
+  - Group consecutive B-*/I-* tokens into entity phrases
+  - For each entity phrase:
+      * Scan 3 words BEFORE entity in originalText
+      * Look for digit (\d+) or word number (one through nine)
+      * Assign quantity (default 1)
+  - Also run fallback: split originalText by common separators
+    (and, aur, or, comma) and scan each segment for quantity words
+  - Return [{ entityText: string, quantity: number }]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ services/menuMatchService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export async matchItemsToMenu(parsedEntities):
+  - For each entity:
+      * Try exact: Menu.findOne({ normalizedName: entity.toLowerCase() })
+      * Try partial: Menu.findOne({ normalizedName: 
+          { $regex: entity.toLowerCase(), $options: 'i' } })
+      * Try stripped plural: remove trailing 's', retry
+      * Try each word individually if multi-word fails
+  - Only accept items where available: true
+  - Build:
+      resolved:    [{ menuItemId, name, quantity, unitPrice, totalPrice }]
+      notFound:    [entityText strings with no DB match]
+      unavailable: [item names found but available:false]
+  - Return { resolved, notFound, unavailable }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔌 API ROUTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET    /api/health
+GET    /api/menu                    → all menu items from MongoDB
+POST   /api/menu                    → add menu item to MongoDB
+POST   /api/ai/process-voice        → full AI pipeline (Steps 2-7)
+  - Accepts: multipart/form-data with field "audio" (audio/webm)
+  - Returns: transcript, translation, entities, resolved items, billing
+POST   /api/orders                  → save confirmed order to MongoDB
+GET    /api/orders                  → paginated order history from MongoDB
+GET    /api/orders/:id              → single order from MongoDB
+PATCH  /api/orders/:id/status       → update order status in MongoDB
+DELETE /api/orders/:id              → soft cancel in MongoDB
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎨 FRONTEND REAL DATA RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VoiceCapture.jsx:
+  - useVoiceRecorder hook manages MediaRecorder lifecycle
+  - On recording stop: auto-send audio Blob to /api/ai/process-voice
+  - Show recording duration timer (real seconds from Date.now())
+  - Show processing states: 
+      "Cleaning audio..." 
+      "Transcribing..." 
+      "Translating..." 
+      "Extracting items..."
+  - Each state driven by SSE or polling response phases
+    (if SSE too complex: use single POST with loading states)
+
+TranscriptPanel.jsx:
+  - Display response.transcript (original language)
+  - If response.translatedText !== response.transcript:
+      show both with language label
+  - Show response.extractedEntities as tag chips
+  - Show response.notFound as red warning chips
+  - All text from API response — never user-typed unless editing
+
+OrderSummary.jsx:
+  - Items ONLY from response.resolvedItems
+  - Qty +/- buttons: call recalculate on frontend using 
+    unitPrice from resolvedItems (only safe local calc allowed)
+  - Remove item: filter from local state
+  - No menu fetched separately for this panel
+
+BillingPanel.jsx:
+  - subtotal, taxAmount, grandTotal ALWAYS from API response
+  - On qty change: POST /api/orders/calculate (lightweight recalc 
+    endpoint) OR recalculate locally using unitPrice * newQty 
+    then apply GST_RATE from env
+  - Payment method selection updates local state only
+  - Table number and customer name: real input fields, not placeholders
+
+InvoiceModal.jsx:
+  - Opens ONLY after successful POST /api/orders response
+  - ALL data from MongoDB saved order (_id, orderNumber, 
+    createdAt, items, billing, tableNumber, customerName)
+  - Order number from DB (not generated on frontend)
+  - Timestamp from DB createdAt (formatted)
+
+useVoiceRecorder.js hook:
+  - start(): navigator.mediaDevices.getUserMedia({ audio: true })
+              → new MediaRecorder(stream) → recorder.start()
+  - stop(): recorder.stop() → collect chunks → 
+            new Blob(chunks, { type: 'audio/webm' })
+  - Return { isRecording, audioBlob, duration, 
+             startRecording, stopRecording, error }
+
+api.js (all real endpoints):
+  processVoice(audioBlob):     POST /api/ai/process-voice (FormData)
+  fetchMenu():                 GET  /api/menu
+  submitOrder(payload):        POST /api/orders
+  fetchOrders(params):         GET  /api/orders
+  fetchOrderById(id):          GET  /api/orders/:id
+  updateOrderStatus(id,status):PATCH /api/orders/:id/status
+  cancelOrder(id):             DELETE /api/orders/:id
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌱 seed/seedMenu.js — REAL DATABASE SEEDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Connect to real MongoDB using MONGODB_URI from .env
+- Menu.deleteMany({}) to clear existing
+- Menu.insertMany([...]) with this data:
+  [
+    {name:"Paneer Butter Masala", price:280, category:"Main Course"},
+    {name:"Dal Makhani",          price:220, category:"Main Course"},
+    {name:"Veg Biryani",          price:260, category:"Rice"},
+    {name:"Chicken Biryani",      price:320, category:"Rice"},
+    {name:"Butter Naan",          price:50,  category:"Bread"},
+    {name:"Garlic Naan",          price:60,  category:"Bread"},
+    {name:"Masala Chai",          price:40,  category:"Beverages"},
+    {name:"Mango Lassi",          price:90,  category:"Beverages"},
+    {name:"Gulab Jamun",          price:80,  category:"Desserts"},
+    {name:"Rasmalai",             price:110, category:"Desserts"},
+    {name:"Veg Manchurian",       price:180, category:"Starters"},
+    {name:"Chicken Tikka",        price:320, category:"Starters"}
+  ]
+- Log inserted count, disconnect, exit(0)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 .env.example (EXACT KEYS REQUIRED)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/voice_billing_db
+HF_TOKEN=hf_your_huggingface_token_here
+GST_RATE=0.05
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+
+frontend/.env.example:
+VITE_API_URL=http://localhost:5000
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ ERROR HANDLING — EVERY LAYER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HuggingFace API errors:
+  - 503 Model loading: retry after 20s (max 3 retries)
+  - 429 Rate limit: return 429 to frontend with message
+  - Network error: return 502 with "AI service unavailable"
+  - Empty response: return 422 with "Could not process audio"
+
+Audio errors:
+  - Mic permission denied: frontend shows permission guide
+  - Empty audio blob: frontend blocks submission
+  - Audio too short (<1s): frontend shows "Please speak longer"
+
+MongoDB errors:
+  - Connection fail: server exits with clear log
+  - Menu item not found: included in notFound[] (not 500)
+  - Duplicate order: retry with new orderNumber
+
+Frontend network errors:
+  - Show toast with exact error message from backend
+  - Never show "Something went wrong" generically
+  - Show retry button for AI processing failures
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚫 ABSOLUTE RULES — NEVER VIOLATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ NO hardcoded menu arrays anywhere in frontend or backend
+✗ NO mock/dummy/fake API responses
+✗ NO placeholder text in any input or display
+✗ NO Math.random() for order numbers (use Date.now() + DB _id)
+✗ NO setTimeout fake loading simulations
+✗ NO fallback fake transcript if AI fails — show real error
+✗ NO frontend billing calculations except qty adjustment
+✗ NO storing HF_TOKEN in frontend code (backend only)
+✗ NO localStorage/sessionStorage usage
+✗ NO console.log in production (use proper logger)
+✓ EVERY displayed value must be traceable to MongoDB or HF API
+✓ EVERY API call must handle loading + error + success states
+✓ EVERY form field must be a real controlled React input
+✓ ALL prices in ₹ formatted with toLocaleString('en-IN')
+✓ ALL timestamps from MongoDB createdAt field
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️ UI DESIGN RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Dark theme: bg #0F172A, cards #1E293B, borders #334155
+- Primary: #4F46E5, Success: #22C55E, Error: #EF4444
+- Font: Outfit (load via useEffect injecting Google Fonts link)
+- 3-column desktop, 2-column tablet, 1-column mobile
+- Mic button: 96px circle, pulse ring animation when recording
+- All loading states show real operation name (not generic spinner)
+- Toast notifications: bottom-right, slide-in, auto-dismiss 4s
+- Invoice modal: print-ready CSS (@media print)
+
+# Backend
+cd backend
+npm install
+cp .env.example .env        # Fill MONGODB_URI + HF_TOKEN
+npm run seed                 # Seeds real menu to MongoDB
+npm run dev                  # Starts on :5000
+
+# Frontend
+cd frontend
+npm install
+cp .env.example .env         # Set VITE_API_URL=http://localhost:5000
+npm run dev                  # Starts on :5173

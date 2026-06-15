@@ -1,0 +1,387 @@
+You are a Senior Full Stack Developer and Backend Architect. Build a complete, 
+production-ready backend for a "Voice-Based Billing System for Restaurants" AND 
+provide the exact frontend API integration layer. Output each file clearly labeled 
+with its path. No explanations — just clean, runnable code.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📁 EXACT FOLDER STRUCTURE TO GENERATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+backend/
+├── app.js
+├── server.js
+├── package.json
+├── .env.example
+├── config/
+│   └── db.js
+├── models/
+│   ├── Menu.js
+│   └── Order.js
+├── controllers/
+│   ├── menuController.js
+│   └── orderController.js
+├── services/
+│   ├── menuService.js
+│   ├── orderService.js
+│   └── billingService.js
+├── routes/
+│   ├── menuRoutes.js
+│   └── orderRoutes.js
+├── middleware/
+│   ├── errorHandler.js
+│   ├── validateOrder.js
+│   └── sanitize.js
+└── seed/
+    └── seedMenu.js
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 package.json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{
+  "name": "voice-billing-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node seed/seedMenu.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.0.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 .env.example
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/voice_billing_db
+GST_RATE=0.05
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ config/db.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Connect mongoose to process.env.MONGODB_URI
+- Log "MongoDB Connected: <host>" on success
+- On error: log and process.exit(1)
+- Export connectDB async function
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗄️ models/Menu.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Schema fields:
+- name: String, required, trim, unique (index: true)
+- normalizedName: String (lowercase of name, auto-set pre-save)
+- price: Number, required, min: 0
+- category: String, enum: ["Starters","Main Course","Rice",
+  "Bread","Beverages","Desserts","Sides"], required
+- available: Boolean, default: true
+- description: String, optional
+- timestamps: true
+
+Pre-save hook: set normalizedName = this.name.toLowerCase().trim()
+Index: { normalizedName: 1 } and { category: 1 }
+Export as "Menu"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗄️ models/Order.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Schema fields:
+- orderNumber: String, unique (auto-generated: "ORD-" + Date.now())
+- tableNumber: Number, required, min: 1
+- customerName: String, default: "Guest"
+- items: Array of:
+    { name: String, 
+      menuItemId: ObjectId ref "Menu", 
+      quantity: Number min 1, 
+      unitPrice: Number, 
+      totalPrice: Number }
+- subtotal: Number
+- gstRate: Number (stored at time of order)
+- taxAmount: Number
+- grandTotal: Number
+- paymentMethod: String, enum: ["Cash","Card","UPI"], default: "Cash"
+- status: String, enum: ["pending","paid","cancelled"], default: "pending"
+- transcript: String (original voice text, optional)
+- timestamps: true
+
+Pre-save: auto-generate orderNumber if not present
+Index: { createdAt: -1 }, { status: 1 }, { tableNumber: 1 }
+Export as "Order"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 services/menuService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export these async functions:
+
+getAllMenuItems(filters):
+- Accept optional { category, available } filters
+- Return lean() documents sorted by category then name
+- Cache result in module-level Map with 60s TTL
+
+getMenuItemByName(name):
+- Search by normalizedName using regex for fuzzy match
+- Also try: strip trailing 's' (plural), strip 'ed', 
+  strip spaces, partial word match
+- Return first available match or null
+
+createMenuItem(data):
+- Check duplicate by normalizedName
+- Throw 409 if exists
+- Save and return new item
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 services/billingService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export calculateBill(resolvedItems, gstRate):
+- resolvedItems = [{ name, menuItemId, quantity, unitPrice }]
+- subtotal = sum of (unitPrice * quantity) for all items
+- taxAmount = Math.round(subtotal * gstRate * 100) / 100
+- grandTotal = Math.round((subtotal + taxAmount) * 100) / 100
+- Return { items (with totalPrice added), subtotal, gstRate, 
+  taxAmount, grandTotal }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 services/orderService.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Export these async functions:
+
+resolveOrderItems(rawItems):
+- rawItems = [{ name: string, qty?: number }]
+- For each item:
+    1. qty = item.qty || 1, clamp to min 1, max 20
+    2. Call menuService.getMenuItemByName(item.name)
+    3. If not found: push to notFound[]
+    4. If not available: push to unavailable[]
+    5. If found: push to resolved[] with unitPrice = menu.price
+- Return { resolved, notFound, unavailable }
+
+createOrder(payload):
+- payload: { items, tableNumber, customerName, 
+  paymentMethod, transcript }
+- Call resolveOrderItems(items)
+- If resolved is empty: throw 400 "No valid items found"
+- Call billingService.calculateBill(resolved, GST_RATE)
+- Save Order document
+- Return { order, warnings: { notFound, unavailable } }
+
+getAllOrders(query):
+- Support { page=1, limit=20, status, tableNumber, date }
+- Return paginated { orders, total, page, pages }
+
+getOrderById(id):
+- Populate menuItemId fields
+- Return order or throw 404
+
+updateOrderStatus(id, status):
+- Validate status in enum
+- Update and return
+
+deleteOrder(id):
+- Soft delete: set status = "cancelled"
+- Return updated order
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎮 controllers/menuController.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+getMenu(req, res, next):
+- Extract category, available from query
+- Call menuService.getAllMenuItems(filters)
+- Return 200 { success: true, count, data }
+
+createMenuItem(req, res, next):
+- Call menuService.createMenuItem(req.body)
+- Return 201 { success: true, data }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎮 controllers/orderController.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+createOrder(req, res, next):
+- Call orderService.createOrder(req.body)
+- Return 201 { success: true, data: order, warnings }
+
+getOrders(req, res, next):
+- Call orderService.getAllOrders(req.query)
+- Return 200 { success: true, ...paginated }
+
+getOrderById(req, res, next):
+- Call orderService.getOrderById(req.params.id)
+- Return 200 { success: true, data }
+
+updateOrderStatus(req, res, next):
+- Call orderService.updateOrderStatus(req.params.id, req.body.status)
+- Return 200 { success: true, data }
+
+deleteOrder(req, res, next):
+- Call orderService.deleteOrder(req.params.id)
+- Return 200 { success: true, message: "Order cancelled" }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛣️ routes/menuRoutes.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GET    /api/menu        → menuController.getMenu
+POST   /api/menu        → menuController.createMenuItem
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛣️ routes/orderRoutes.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POST   /api/orders           → createOrder
+GET    /api/orders           → getOrders
+GET    /api/orders/:id       → getOrderById
+PATCH  /api/orders/:id/status → updateOrderStatus
+DELETE /api/orders/:id       → deleteOrder
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ middleware/validateOrder.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use express-validator:
+- items: must be non-empty array
+- items[*].name: string, notEmpty, trim
+- items[*].qty: optional, isInt min 1 max 20
+- tableNumber: required, isInt min 1
+- paymentMethod: optional, isIn ["Cash","Card","UPI"]
+- Export validationResult check middleware that returns
+  400 with array of errors if validation fails
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ middleware/sanitize.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Apply express-mongo-sanitize() to strip $ and . from inputs
+- Trim all string fields in req.body recursively
+- Export as middleware function
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ middleware/errorHandler.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Centralized (err, req, res, next):
+- Log error in development
+- Handle: CastError (mongoose bad ID) → 400
+- Handle: code 11000 (duplicate key) → 409
+- Handle: ValidationError → 400 with field messages
+- Handle: custom err.statusCode if set
+- Default: 500 { success: false, error: "Server Error" }
+- In production: don't leak stack traces
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ app.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Import express, helmet, cors, morgan, mongoSanitize
+- Apply: helmet(), cors({ origin: process.env.FRONTEND_URL,
+  credentials: true }), morgan('dev') in development,
+  express.json({ limit: '10kb' }), express.urlencoded(),
+  sanitize middleware
+- Mount: /api/menu, /api/orders
+- Health check: GET /api/health → 200 { status: "ok", uptime }
+- 404 handler for unknown routes
+- Mount errorHandler last
+- Export app
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ server.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Load dotenv
+- Import connectDB and app
+- Call connectDB() then app.listen(PORT)
+- Handle unhandledRejection: log + server.close() + exit(1)
+- Handle uncaughtException: log + exit(1)
+- Log "Server running on port PORT in NODE_ENV mode"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌱 seed/seedMenu.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Seed this exact data (12 items):
+[
+  { name:"Paneer Butter Masala", price:280, category:"Main Course" },
+  { name:"Dal Makhani",          price:220, category:"Main Course" },
+  { name:"Veg Biryani",          price:260, category:"Rice" },
+  { name:"Chicken Biryani",      price:320, category:"Rice" },
+  { name:"Butter Naan",          price:50,  category:"Bread" },
+  { name:"Garlic Naan",          price:60,  category:"Bread" },
+  { name:"Masala Chai",          price:40,  category:"Beverages" },
+  { name:"Mango Lassi",          price:90,  category:"Beverages" },
+  { name:"Gulab Jamun",          price:80,  category:"Desserts" },
+  { name:"Rasmalai",             price:110, category:"Desserts" },
+  { name:"Veg Manchurian",       price:180, category:"Starters" },
+  { name:"Chicken Tikka",        price:320, category:"Starters" }
+]
+- Connect to DB, deleteMany(), insertMany(), log count, disconnect
+- Run with: npm run seed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗 FRONTEND INTEGRATION LAYER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Also generate this file for the React frontend:
+frontend/src/services/api.js
+
+Content:
+- BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000"
+- Generic async apiRequest(method, endpoint, body) function:
+    * fetch with JSON headers
+    * throw Error with server's error message on !response.ok
+    * return parsed JSON
+- Export named functions:
+    fetchMenu()               → GET /api/menu
+    submitOrder(payload)      → POST /api/orders
+      payload: { items:[{name,qty}], tableNumber, customerName,
+                 paymentMethod, transcript }
+    fetchOrders(params)       → GET /api/orders?page&limit&status
+    fetchOrderById(id)        → GET /api/orders/:id
+    updateStatus(id, status)  → PATCH /api/orders/:id/status
+    cancelOrder(id)           → DELETE /api/orders/:id
+
+Also generate:
+frontend/.env.example:
+  VITE_API_URL=http://localhost:5000
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📬 POSTMAN TEST DATA (as JS comments at bottom of app.js)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Include as a comment block:
+// === POSTMAN TEST EXAMPLES ===
+// GET  http://localhost:5000/api/health
+// GET  http://localhost:5000/api/menu
+// GET  http://localhost:5000/api/menu?category=Starters&available=true
+// POST http://localhost:5000/api/orders
+//   Body: {
+//     "items": [
+//       { "name": "chicken biryani", "qty": 2 },
+//       { "name": "garlic naan", "qty": 3 },
+//       { "name": "mango lassi" }
+//     ],
+//     "tableNumber": 5,
+//     "customerName": "Raj Patel",
+//     "paymentMethod": "UPI",
+//     "transcript": "two chicken biryani three garlic naan mango lassi"
+//   }
+// GET  http://localhost:5000/api/orders
+// GET  http://localhost:5000/api/orders?status=pending&page=1&limit=10
+// PATCH http://localhost:5000/api/orders/:id/status
+//   Body: { "status": "paid" }
+// DELETE http://localhost:5000/api/orders/:id
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚫 HARD CONSTRAINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Node.js + Express + Mongoose ONLY
+- No TypeScript
+- No authentication/JWT (MVP scope)
+- No frontend UI code (except api.js service file)
+- All prices in INR (Number type, no currency symbol in DB)
+- GST_RATE must be read from process.env.GST_RATE at runtime,
+  default 0.05
+- Every exported function must have JSDoc comment
+- All async functions wrapped in try/catch or use 
+  express-async-errors pattern (add require('express-async-errors')
+  at top of app.js)
+- Label every file with its exact path as a comment on line 1

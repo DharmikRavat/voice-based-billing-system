@@ -1,0 +1,216 @@
+You are a Senior Full Stack Developer and Expert UI/UX Designer. Build a complete, 
+single-file React + Tailwind CSS application for a "Voice-Based Billing System for 
+Restaurants" (POS system). Output ONLY a single .jsx file — no explanations, no markdown 
+fences, just raw JSX code.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎨 AESTHETIC DIRECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Style: Refined dark-mode POS terminal — think luxury restaurant meets modern SaaS
+- Primary: #4F46E5 (Indigo), Secondary: #22C55E (Green), BG: #0F172A (Slate-900)
+- Cards: #1E293B with border #334155, subtle glass-morphism (backdrop-blur)
+- Font: import { Outfit } from Google Fonts via @import in a <style> tag injected 
+  into document.head inside useEffect
+- All text in Outfit; headings bold/800 weight
+- Soft inner glow on active microphone button (box-shadow pulse)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📁 STRUCTURE (all in one file, no imports from other files)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use ONLY:
+- React (useState, useEffect, useRef, useCallback) — imported from "react"
+- Tailwind CSS classes only (no CSS modules, no styled-components)
+- Lucide React icons — imported from "lucide-react"
+- NO framer-motion, NO external libs except lucide-react
+
+Export default a single component: VoiceBillingPOS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 SAMPLE MENU DATA (hardcode inside component)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const MENU_ITEMS = [
+  { id: 1,  name: "Paneer Butter Masala",  price: 280, category: "Main Course" },
+  { id: 2,  name: "Dal Makhani",           price: 220, category: "Main Course" },
+  { id: 3,  name: "Veg Biryani",           price: 260, category: "Rice" },
+  { id: 4,  name: "Chicken Biryani",       price: 320, category: "Rice" },
+  { id: 5,  name: "Butter Naan",           price: 50,  category: "Bread" },
+  { id: 6,  name: "Garlic Naan",           price: 60,  category: "Bread" },
+  { id: 7,  name: "Masala Chai",           price: 40,  category: "Beverages" },
+  { id: 8,  name: "Mango Lassi",           price: 90,  category: "Beverages" },
+  { id: 9,  name: "Gulab Jamun",           price: 80,  category: "Desserts" },
+  { id: 10, name: "Rasmalai",              price: 110, category: "Desserts" },
+  { id: 11, name: "Veg Manchurian",        price: 180, category: "Starters" },
+  { id: 12, name: "Chicken Tikka",         price: 320, category: "Starters" },
+];
+const GST_RATE = 0.05; // 5% GST
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏗️ LAYOUT (Desktop: 3 columns, Tablet: 2 cols, Mobile: 1 col stacked)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOP BAR:
+- Left: Restaurant logo icon + "VoicePOS" text
+- Center: Current date + time (live clock with useEffect, updates every second)
+- Right: Table number badge (editable, click to change) + status pill "Open"
+
+LEFT COLUMN (col-span-1):
+  ┌─ VOICE INPUT CARD ──────────────────┐
+  │ Title: "Voice Order"               │
+  │ Large circular mic button (96px)   │
+  │  - When idle: indigo border, mic   │
+  │    icon, label "Tap to Speak"      │
+  │  - When listening: green glow +    │
+  │    CSS keyframe pulse ring anim    │
+  │    (3 concentric rings scale out)  │
+  │    label changes to "Listening..." │
+  │ Uses window.SpeechRecognition or   │
+  │ window.webkitSpeechRecognition     │
+  │ continuous: false, lang: 'en-IN'   │
+  └─────────────────────────────────────┘
+  ┌─ TRANSCRIPT CARD ───────────────────┐
+  │ Live transcript in editable        │
+  │ <textarea> (dark bg, green text)   │
+  │ "Parse Items" button below it      │
+  │ On parse: fuzzy-match words in     │
+  │ transcript against MENU_ITEMS      │
+  │ names (case-insensitive includes)  │
+  │ + detect qty ("two", "2", "dono")  │
+  │ Add matched items to order         │
+  │ Show "X items recognized" toast    │
+  └─────────────────────────────────────┘
+  ┌─ QUICK ADD CARD ────────────────────┐
+  │ Grid of category filter pills      │
+  │ Below: scrollable grid of menu     │
+  │ item buttons (name + price)        │
+  │ Click = add to order instantly     │
+  └─────────────────────────────────────┘
+
+MIDDLE COLUMN (col-span-1):
+  ┌─ ORDER SUMMARY CARD ────────────────┐
+  │ Header: "Current Order" + item     │
+  │ count badge + "Clear All" link     │
+  │ Scrollable list (max-h-96):        │
+  │  Each row:                         │
+  │   [Item Name]    [qty -][n][+]  ₹XX│
+  │   [category tag]        [🗑 remove]│
+  │  Divider between rows              │
+  │ Empty state: animated empty plate  │
+  │ illustration (SVG inline) +        │
+  │ "Start speaking to add items"      │
+  └─────────────────────────────────────┘
+
+RIGHT COLUMN (col-span-1):
+  ┌─ BILLING CARD ──────────────────────┐
+  │ Table: customer name input (opt)   │
+  │ Table number display               │
+  │ ─────────────────────────────────  │
+  │ Subtotal:              ₹X,XXX      │
+  │ GST (5%):              ₹  XXX      │
+  │ ─────────────────────────────────  │
+  │ GRAND TOTAL:           ₹X,XXX      │
+  │ (large, green, bold)               │
+  │                                    │
+  │ Payment method pills:              │
+  │  [Cash] [Card] [UPI]               │
+  │                                    │
+  │ [🖨 Generate Bill] ← primary CTA   │
+  │  full-width, indigo, large         │
+  │ [🔄 New Order]  ← secondary        │
+  └─────────────────────────────────────┘
+  ┌─ INVOICE MODAL (conditionally) ────┐
+  │ Triggered by Generate Bill         │
+  │ Shows formatted receipt:           │
+  │  - Restaurant name + logo          │
+  │  - Date/time + order # (random)    │
+  │  - Table + customer                │
+  │  - Itemized list                   │
+  │  - Subtotal / GST / Total          │
+  │  - Payment method                  │
+  │  - Thank you message               │
+  │ [Print] [Close] buttons            │
+  │ window.print() on Print click      │
+  │ Backdrop blur overlay              │
+  └─────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔔 TOAST NOTIFICATION SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Fixed bottom-right stack of toasts
+- Types: success (green), error (red), info (indigo)
+- Auto-dismiss after 3s
+- Slide-in animation via CSS transform translateX
+- Show on: item added, items parsed, bill generated, 
+  speech error, order cleared
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ STATE MANAGEMENT (all useState/useRef)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- orderItems: [{ menuItem, quantity }]
+- transcript: string
+- isListening: boolean
+- selectedCategory: string ("All" default)
+- paymentMethod: "Cash" | "Card" | "UPI"
+- showInvoice: boolean
+- toasts: [{ id, message, type }]
+- tableNumber: number (default 1)
+- customerName: string
+- currentTime: Date (live clock)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 VOICE PARSING LOGIC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function parseTranscript(text):
+1. Lowercase the text
+2. For each MENU_ITEM, check if item.name.toLowerCase() words appear in text
+3. Detect quantity: look for digit before item name, OR words 
+   "one"=1 "two"=2 "three"=3 "four"=4 "five"=5 before item name
+4. Default qty = 1 if not found
+5. If item already in order, increment quantity
+6. Return array of { item, qty } matched
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎞️ CSS ANIMATIONS (inject via <style> in useEffect)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fade-in-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.pulse-ring::before, .pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid #22C55E;
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+.pulse-ring::after { animation-delay: 0.5s; }
+.toast-enter { animation: slide-in-right 0.3s ease forwards; }
+.order-item-enter { animation: fade-in-up 0.2s ease forwards; }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📱 RESPONSIVE BREAKPOINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Mobile (<768px): Single column, voice section on top, 
+  sticky Generate Bill button at bottom (fixed bottom-0)
+- Tablet (768-1024px): 2 columns (voice+transcript LEFT, 
+  order+billing RIGHT)
+- Desktop (>1024px): 3 columns as described above
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚫 CONSTRAINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Single .jsx file, default export
+- No backend calls (all data is hardcoded)
+- No framer-motion
+- Tailwind only (no custom CSS except the injected @keyframes)
+- Graceful fallback if SpeechRecognition not supported 
+  (show "Voice not supported in this browser" error state)
+- All prices in ₹ (Indian Rupee)
+- Numbers formatted with toLocaleString('en-IN')
